@@ -1,26 +1,25 @@
 import React from "react";
-import ReactDOM from "react-dom/client";
+import { createRoot } from "react-dom/client";
+
 import App from "./App";
 import "./styles.css";
 
-const rootElement = document.getElementById("root");
+function initializeCOL(): void {
+  const rootElement = document.getElementById("root");
 
-if (!rootElement) {
-  throw new Error("COL application root element was not found.");
+  if (!rootElement) {
+    throw new Error(
+      "COL initialization failed: Root element was not found."
+    );
+  }
+
+  const root = createRoot(rootElement);
+
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
 }
 
-ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
-
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register(
-      `${import.meta.env.BASE_URL}service-worker.js`
-    ).catch((error) => {
-      console.error("COL service worker registration failed:", error);
-    });
-  });
-}
+initializeCOL();
