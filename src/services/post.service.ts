@@ -8,6 +8,7 @@ import {
   serverTimestamp,
   startAfter,
   Timestamp,
+  where,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
@@ -192,6 +193,7 @@ export async function getPublicFeed(
     const postsReference = collection(db, POSTS_COLLECTION);
 
     const constraints = [
+      where("visibility", "==", "public"),
       orderBy("createdAt", "desc"),
       ...(lastDocument ? [startAfter(lastDocument)] : []),
       limit(safePageSize + 1),
