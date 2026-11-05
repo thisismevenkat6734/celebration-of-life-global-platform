@@ -37,7 +37,9 @@ function validateDisplayName(name: string): string {
   const value = name.trim();
 
   if (value.length < 2 || value.length > 50) {
-    throw new Error("Name must contain between 2 and 50 characters.");
+    throw new Error(
+      "Name must contain between 2 and 50 characters."
+    );
   }
 
   return value;
@@ -51,6 +53,18 @@ function validateBio(bio: string): string {
   }
 
   return value;
+}
+
+function validateLocation(
+  location: string | null
+): string | null {
+  const value = location?.trim() ?? "";
+
+  if (value.length > 100) {
+    throw new Error("Location cannot exceed 100 characters.");
+  }
+
+  return value || null;
 }
 
 function toProfile(
@@ -71,9 +85,7 @@ function toProfile(
         ? data.location
         : null,
     visibility:
-      data.visibility === "private"
-        ? "private"
-        : "public",
+      data.visibility === "private" ? "private" : "public",
     profileSetupCompleted:
       data.profileSetupCompleted === true,
     createdAt: data.createdAt,
@@ -85,7 +97,9 @@ export async function createUserProfile(
   user: User
 ): Promise<COLUserProfile> {
   if (!user.uid || !user.email) {
-    throw new Error("Authenticated user information is incomplete.");
+    throw new Error(
+      "Authenticated user information is incomplete."
+    );
   }
 
   const reference = profileReference(user.uid);
@@ -97,10 +111,7 @@ export async function createUserProfile(
       return toProfile(user.uid, existing.data());
     }
 
-    const profile: Omit<
-      COLUserProfile,
-      "createdAt" | "updatedAt"
-    > = {
+    const profile: COLUserProfile = {
       uid: user.uid,
       displayName: validateDisplayName(
         user.displayName || "COL Member"
@@ -139,7 +150,9 @@ export async function getUserProfile(
 
     return toProfile(uid, snapshot.data());
   } catch {
-    throw new Error("Unable to load the user profile.");
+    throw new Error(
+      "Unable to load the user profile. Check your Firestore permissions."
+    );
   }
 }
 
@@ -171,13 +184,7 @@ export async function updateUserProfile(
   }
 
   if (updates.location !== undefined) {
-    const location = updates.location?.trim() ?? "";
-
-    if (location.length > 100) {
-      throw new Error("Location cannot exceed 100 characters.");
-    }
-
-    safeUpdates.location = location || null;
+    safeUpdates.location = validateLocation(updates.location);
   }
 
   if (updates.visibility !== undefined) {
@@ -192,10 +199,24 @@ export async function updateUserProfile(
   }
 
   if (updates.photoURL !== undefined) {
+    if (
+      updates.photoURL !== null &&
+      (
+        typeof updates.photoURL !== "string" ||
+        updates.photoURL.length > 2048
+      )
+    ) {
+      throw new Error("Invalid profile photo URL.");
+    }
+
     safeUpdates.photoURL = updates.photoURL;
   }
 
-  if (updates.completeSetup === true) {
+  if (updates.completeSetup !== undefined) {
+    if (updates.completeSetup !== true) {
+      throw new Error("Invalid profile setup status.");
+    }
+
     safeUpdates.profileSetupCompleted = true;
   }
 
@@ -205,7 +226,7 @@ export async function updateUserProfile(
     await updateDoc(profileReference(uid), safeUpdates);
   } catch {
     throw new Error(
-      "Unable to update your profile. Please try again."
+      "Unable to update your profile. Please check your Firestore permissions and try again."
     );
   }
 }
