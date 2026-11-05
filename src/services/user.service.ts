@@ -20,6 +20,7 @@ export interface COLUserProfile {
   bio: string;
   location: string | null;
   visibility: ProfileVisibility;
+  profileSetupCompleted: boolean;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -73,6 +74,8 @@ function toProfile(
       data.visibility === "private"
         ? "private"
         : "public",
+    profileSetupCompleted:
+      data.profileSetupCompleted === true,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
@@ -107,6 +110,7 @@ export async function createUserProfile(
       bio: "",
       location: null,
       visibility: "public",
+      profileSetupCompleted: false,
     };
 
     await setDoc(reference, {
@@ -147,6 +151,7 @@ export async function updateUserProfile(
     location?: string | null;
     visibility?: ProfileVisibility;
     photoURL?: string | null;
+    completeSetup?: boolean;
   }
 ): Promise<void> {
   if (Object.keys(updates).length === 0) {
@@ -188,6 +193,10 @@ export async function updateUserProfile(
 
   if (updates.photoURL !== undefined) {
     safeUpdates.photoURL = updates.photoURL;
+  }
+
+  if (updates.completeSetup === true) {
+    safeUpdates.profileSetupCompleted = true;
   }
 
   safeUpdates.updatedAt = serverTimestamp();
