@@ -11,39 +11,172 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function validCategory(category) {
+      return category in [
+        'birthday',
+        'wedding',
+        'achievement',
+        'family',
+        'friendship',
+        'travel',
+        'festival',
+        'graduation',
+        'other'
+      ];
+    }
+
+    function validMedia(media) {
+      return media is list
+        && media.size() <= 10;
+    }
+
+    // USER PROFILES
     match /users/{userId} {
 
-      // Owners can read their own profile.
-      // Other users can read only public profiles.
       allow get: if isOwner(userId)
-        || resource.data.visibility == "public";
+        || resource.data.visibility == 'public';
 
       allow list: if isSignedIn()
-        && resource.data.visibility == "public";
+        && resource.data.visibility == 'public';
 
-      // Users can create only their own profile.
       allow create: if isOwner(userId)
         && request.resource.data.uid == userId
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() >= 2
         && request.resource.data.displayName.size() <= 50
-        && request.resource.data.visibility in ["public", "private"];
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 300
+        && request.resource.data.visibility in ['public', 'private'];
 
-      // Users can update only their own profile.
       allow update: if isOwner(userId)
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'displayName',
+            'bio',
+            'photoURL',
+            'location',
+            'visibility',
+            'updatedAt'
+          ])
         && request.resource.data.displayName is string
         && request.resource.data.displayName.size() >= 2
         && request.resource.data.displayName.size() <= 50
-        && request.resource.data.visibility in ["public", "private"];
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 300
+        && request.resource.data.visibility in ['public', 'private'];
 
       allow delete: if false;
     }
 
-    // All other collections remain denied until
-    // their specific security rules are implemented.
+    // CELEBRATION POSTS
+    match /posts/{postId} {
+
+      allow read: if isSignedIn()
+        && (
+          resource.data.visibility == 'public'
+          || resource.data.authorId == request.auth.uid
+        );
+
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll([
+          'authorId',
+          'authorName',
+          'authorPhotoURL',
+          'text',
+          'category',
+          'media',
+          'visibility',
+          'likeCount',
+          'commentCount',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'authorId',
+          'authorName',
+          'authorPhotoURL',
+          'text',
+          'category',
+          'media',
+          'visibility',
+          'likeCount',
+          'commentCount',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.authorName is string
+        && request.resource.data.authorName.size() >= 2
+        && request.resource.data.authorName.size() <= 60
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 3000
+        && validCategory(request.resource.data.category)
+        && validMedia(request.resource.data.media)
+        && request.resource.data.visibility == 'public'
+        && request.resource.data.likeCount == 0
+        && request.resource.data.commentCount == 0
+        && request.resource.data.createdAt == request.time;
+
+      // Post counters must be changed by trusted backend only.
+      allow update: if false;
+
+      allow delete: if isSignedIn()
+        && resource.data.authorId == request.auth.uid;
+
+      // REACTIONS
+      match /reactions/{userId} {
+
+        allow read: if isSignedIn();
+
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasOnly([
+            'userId',
+            'type',
+            'updatedAt'
+          ])
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.type in [
+            'like',
+            'love',
+            'celebrate',
+            'party',
+            'applause'
+          ];
+
+        allow delete: if isOwner(userId);
+      }
+
+      // COMMENTS
+      match /comments/{commentId} {
+
+        allow read: if isSignedIn();
+
+        allow create: if isSignedIn()
+          && request.resource.data.keys().hasOnly([
+            'postId',
+            'authorId',
+            'authorName',
+            'authorPhotoURL',
+            'text',
+            'createdAt'
+          ])
+          && request.resource.data.postId == postId
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.authorName is string
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.createdAt == request.time;
+
+        allow update, delete: if false;
+      }
+    }
+
+    // DENY EVERYTHING NOT EXPLICITLY ALLOWED
     match /{document=**} {
       allow read, write: if false;
     }
