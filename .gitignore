@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+functions/node_modules/
+
+# Build output
+dist/
+functions/lib/
+build/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+functions/.env
+functions/.env.*
+
+# Firebase local configuration
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+
+# Capacitor generated native projects
+android/
+ios/
+
+# Local tooling
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
