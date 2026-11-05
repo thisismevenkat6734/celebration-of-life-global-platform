@@ -1,11 +1,15 @@
-const CACHE_NAME = 'col-app-shell-v1';
+const CACHE_NAME = 'col-app-shell-v2';
 
 const APP_SHELL_URL = new URL('./', self.registration.scope).href;
+const OFFLINE_URL = new URL('offline.html', self.registration.scope).href;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.add(APP_SHELL_URL);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await cache.addAll([
+        APP_SHELL_URL,
+        OFFLINE_URL
+      ]);
     })
   );
 
@@ -17,7 +21,9 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) =>
       Promise.all(
         cacheNames
-          .filter((name) => name.startsWith('col-') && name !== CACHE_NAME)
+          .filter(
+            (name) => name.startsWith('col-') && name !== CACHE_NAME
+          )
           .map((name) => caches.delete(name))
       )
     )
@@ -33,7 +39,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Never cache authentication, API or external media requests.
+  // Do not intercept external requests or authentication endpoints.
   if (url.origin !== self.location.origin) return;
 
   if (
@@ -45,43 +51,37 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
+      fetch(request).catch(async () => {
+        const cachedPage = await caches.match(request);
 
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(APP_SHELL_URL, copy);
-            });
-          }
+        if (cachedPage) return cachedPage;
 
-          return response;
-        })
-        .catch(async () => {
-          const cached = await caches.match(APP_SHELL_URL);
+        const offlinePage = await caches.match(OFFLINE_URL);
 
-          return cached || new Response(
-            'COL is currently offline. Please reconnect and try again.',
-            {
-              status: 503,
-              headers: {
-                'Content-Type': 'text/plain; charset=utf-8'
-              }
+        return offlinePage || new Response(
+          'You are currently offline.',
+          {
+            status: 503,
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8'
             }
-          );
-        })
+          }
+        );
+      })
     );
 
     return;
   }
 
-  if (url.pathname.startsWith(new URL('./', self.registration.scope).pathname)) {
+  const appPath = new URL('./', self.registration.scope).pathname;
+
+  if (url.pathname.startsWith(appPath)) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
 
         return fetch(request).then((response) => {
-          if (response.ok) {
+          if (response.ok && response.type === 'basic') {
             const copy = response.clone();
 
             caches.open(CACHE_NAME).then((cache) => {
