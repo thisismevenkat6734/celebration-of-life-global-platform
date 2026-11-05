@@ -1,19 +1,32 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { User } from "firebase/auth";
+
 import {
-  signup,
   login,
   logout,
   resetPassword,
   observeAuthState,
 } from "./services/auth.service";
 
+import { registerCOLAccount } from "./services/account.service";
+
+import {
+  createUserProfile,
+  getUserProfile,
+  updateUserProfile,
+  type COLUserProfile,
+  type ProfileVisibility,
+} from "./services/user.service";
+
 type AuthMode = "login" | "signup" | "reset";
 
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<COLUserProfile | null>(null);
+
   const [loading, setLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -21,10 +34,69 @@ function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  const [bio, setBio] = useState("");
+  const [location, setLocation] = useState("");
+  const [visibility, setVisibility] =
+    useState<ProfileVisibility>("public");
+
   useEffect(() => {
-    const unsubscribe = observeAuthState(setUser);
+    const unsubscribe = observeAuthState((currentUser) => {
+      setUser(currentUser);
+      setProfile(null);
+      setProfileLoading(true);
+      setError("");
+    });
+
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
+      if (!user) {
+        setProfile(null);
+        setProfileLoading(false);
+        return;
+      }
+
+      setProfileLoading(true);
+
+      try {
+        let currentProfile = await getUserProfile(user.uid);
+
+        if (!currentProfile) {
+          currentProfile = await createUserProfile(user);
+        }
+
+        if (active) {
+          setProfile(currentProfile);
+          setName(currentProfile.displayName);
+          setBio(currentProfile.bio);
+          setLocation(currentProfile.location ?? "");
+          setVisibility(currentProfile.visibility);
+        }
+      } catch (err) {
+        if (active) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Unable to load your profile."
+          );
+        }
+      } finally {
+        if (active) {
+          setProfileLoading(false);
+        }
+      }
+    }
+
+    void loadProfile();
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -41,17 +113,25 @@ function App() {
 
     try {
       if (mode === "signup") {
-        await signup({
-          displayName: name,
-          email,
+        const result = await registerCOLAccount({
+          displayName: name.trim(),
+          email: email.trim(),
           password,
         });
 
-        setSuccess("Your COL account has been created.");
+        if (!result.profileCreated) {
+          setSuccess(
+            "Your account was created. We will retry loading your profile."
+          );
+        }
       } else if (mode === "login") {
-        await login({ email, password });
+        await login({
+          email: email.trim(),
+          password,
+        });
       } else {
-        await resetPassword(email);
+        await resetPassword(email.trim());
+
         setSuccess(
           "If an account exists for this email, password reset instructions will be sent."
         );
@@ -67,12 +147,52 @@ function App() {
     }
   }
 
+  async function handleProfileSetup(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (!user) return;
+
+    setLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await updateUserProfile(user.uid, {
+        displayName: name.trim(),
+        bio: bio.trim(),
+        location: location.trim() || null,
+        visibility,
+        completeSetup: true,
+      });
+
+      const updatedProfile = await getUserProfile(user.uid);
+
+      if (!updatedProfile) {
+        throw new Error("Profile could not be reloaded.");
+      }
+
+      setProfile(updatedProfile);
+      setSuccess("Your COL profile is ready!");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to save your profile."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleLogout() {
     setLoading(true);
     setError("");
 
     try {
       await logout();
+      setProfile(null);
       setSuccess("You have signed out.");
     } catch (err) {
       setError(
@@ -85,17 +205,139 @@ function App() {
     }
   }
 
-  if (user) {
+  function Brand() {
+    return (
+      <a className="col-brand" href="#home">
+        <span className="col-logo">C</span>
+        <span>
+          <strong>COL</strong>
+          <small>Celebration of Life</small>
+        </span>
+      </a>
+    );
+  }
+
+  if (user && profileLoading) {
     return (
       <main className="col-app">
         <header className="col-header">
-          <a className="col-brand" href="#home">
-            <span className="col-logo">C</span>
-            <span>
-              <strong>COL</strong>
-              <small>Celebration of Life</small>
-            </span>
-          </a>
+          <Brand />
+        </header>
+
+        <section className="col-auth-card">
+          <h2>Preparing your COL experience...</h2>
+          <p>Please wait while we load your profile.</p>
+          {error && (
+            <p className="col-message error" role="alert">
+              {error}
+            </p>
+          )}
+        </section>
+      </main>
+    );
+  }
+
+  if (user && profile && !profile.profileSetupCompleted) {
+    return (
+      <main className="col-app">
+        <header className="col-header">
+          <Brand />
+          <button
+            className="col-button secondary"
+            onClick={handleLogout}
+            disabled={loading}
+          >
+            Sign out
+          </button>
+        </header>
+
+        <section className="col-auth-layout">
+          <section className="col-auth-card">
+            <div className="col-card-heading">
+              <p className="col-eyebrow">WELCOME TO COL</p>
+              <h2>Build your profile</h2>
+              <p>
+                Tell the world a little about yourself.
+                You can change these details later.
+              </p>
+            </div>
+
+            <form onSubmit={handleProfileSetup}>
+              <label className="col-field">
+                Your display name
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  minLength={2}
+                  maxLength={50}
+                  required
+                />
+              </label>
+
+              <label className="col-field">
+                About you
+                <textarea
+                  value={bio}
+                  onChange={(event) => setBio(event.target.value)}
+                  placeholder="Share something about yourself..."
+                  maxLength={300}
+                  rows={4}
+                />
+              </label>
+
+              <label className="col-field">
+                Location (optional)
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  placeholder="City or country"
+                  maxLength={100}
+                />
+              </label>
+
+              <label className="col-field">
+                Profile visibility
+                <select
+                  value={visibility}
+                  onChange={(event) =>
+                    setVisibility(
+                      event.target.value as ProfileVisibility
+                    )
+                  }
+                >
+                  <option value="public">Public profile</option>
+                  <option value="private">Private profile</option>
+                </select>
+              </label>
+
+              {error && (
+                <p className="col-message error" role="alert">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                className="col-button primary full"
+                disabled={loading}
+              >
+                {loading ? "Saving profile..." : "Complete profile"}
+              </button>
+            </form>
+          </section>
+        </section>
+      </main>
+    );
+  }
+
+  if (user && profile) {
+    return (
+      <main className="col-app">
+        <header className="col-header">
+          <Brand />
+
           <button
             className="col-button secondary"
             onClick={handleLogout}
@@ -107,22 +349,44 @@ function App() {
 
         <section className="col-welcome" id="home">
           <div className="col-sparkle">✦</div>
-          <p className="col-eyebrow">WELCOME TO COL</p>
+          <p className="col-eyebrow">YOUR WORLD OF HAPPY MOMENTS</p>
+
           <h1>
-            Every moment
+            Welcome to
             <br />
-            deserves to <span>shine.</span>
+            COL, <span>{profile.displayName}.</span>
           </h1>
+
           <p className="col-description">
-            Welcome, {user.displayName || "COL Member"}.
-            Your account is connected to Celebration of Life.
+            Your profile is ready. This is the beginning of
+            your Celebration of Life journey.
           </p>
-          <p className="col-account">
-            Signed in as {user.email}
-          </p>
-          <p className="col-status">
-            Your authentication session is active.
-          </p>
+
+          <section className="col-auth-card">
+            <h2>Your profile</h2>
+            <p><strong>Name:</strong> {profile.displayName}</p>
+            <p><strong>Email:</strong> {profile.email}</p>
+            <p><strong>About:</strong> {profile.bio || "Not added yet"}</p>
+            <p><strong>Location:</strong> {profile.location || "Not added"}</p>
+            <p>
+              <strong>Visibility:</strong> {profile.visibility}
+            </p>
+          </section>
+
+          <section className="col-auth-card">
+            <p className="col-eyebrow">COMING NEXT</p>
+            <h2>Your celebration feed</h2>
+            <p>
+              The next development step is connecting your
+              dashboard to posts, photos, videos and celebrations.
+            </p>
+          </section>
+
+          {success && (
+            <p className="col-message success" role="status">
+              {success}
+            </p>
+          )}
         </section>
       </main>
     );
@@ -131,14 +395,7 @@ function App() {
   return (
     <main className="col-app">
       <header className="col-header">
-        <a className="col-brand" href="#home">
-          <span className="col-logo">C</span>
-          <span>
-            <strong>COL</strong>
-            <small>Celebration of Life</small>
-          </span>
-        </a>
-
+        <Brand />
         <span className="col-header-caption">
           A World of Happy Moments
         </span>
