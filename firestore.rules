@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+
+      // Owners can read their own profile.
+      // Other users can read only public profiles.
+      allow get: if isOwner(userId)
+        || resource.data.visibility == "public";
+
+      allow list: if isSignedIn()
+        && resource.data.visibility == "public";
+
+      // Users can create only their own profile.
+      allow create: if isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 50
+        && request.resource.data.visibility in ["public", "private"];
+
+      // Users can update only their own profile.
+      allow update: if isOwner(userId)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 50
+        && request.resource.data.visibility in ["public", "private"];
+
+      allow delete: if false;
+    }
+
+    // All other collections remain denied until
+    // their specific security rules are implemented.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
