@@ -1,16 +1,20 @@
-
 {
   "name": "celebration-of-life-global-platform",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "COL - Celebration of Life, a global platform for sharing happy moments and memories.",
+  "description": "COL - Celebration of Life Global Social Platform",
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "cap sync",
+    "cap:open:android": "cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
     "firebase": "^12.5.0",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
@@ -18,6 +22,7 @@
     "react-router-dom": "^7.9.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.4.3",
     "@types/node": "^22.15.30",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
