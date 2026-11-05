@@ -12,8 +12,7 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 
-import { db } from "../lib/firebase";
-import { auth } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 
 export type COLPostCategory =
   | "birthday"
@@ -119,10 +118,7 @@ function validatePost(input: COLPostInput): void {
   }
 }
 
-function mapPost(
-  id: string,
-  data: DocumentData
-): COLPost {
+function mapPost(id: string, data: DocumentData): COLPost {
   return {
     id,
     authorId: String(data.authorId ?? ""),
@@ -207,14 +203,14 @@ export async function getPublicFeed(
     const hasMore = snapshot.docs.length > safePageSize;
     const pageDocuments = snapshot.docs.slice(0, safePageSize);
 
+    const finalDocument =
+      pageDocuments[pageDocuments.length - 1] ?? null;
+
     return {
       posts: pageDocuments.map((document) =>
         mapPost(document.id, document.data())
       ),
-      lastDocument:
-        pageDocuments.length > 0
-          ? pageDocuments[pageDocuments.length - 1]
-          : null,
+      lastDocument: finalDocument,
       hasMore,
     };
   } catch {
