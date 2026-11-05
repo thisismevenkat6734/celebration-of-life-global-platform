@@ -60,10 +60,7 @@ function getPostReference(postId: string) {
   return doc(db, "posts", postId);
 }
 
-function getReactionReference(
-  postId: string,
-  uid: string
-) {
+function getReactionReference(postId: string, uid: string) {
   return doc(db, "posts", postId, "reactions", uid);
 }
 
@@ -271,14 +268,14 @@ export async function getPostComments(
     const hasMore = snapshot.docs.length > safePageSize;
     const documents = snapshot.docs.slice(0, safePageSize);
 
+    const finalDocument =
+      documents[documents.length - 1] ?? null;
+
     return {
       comments: documents.map((item) =>
         mapComment(item.id, item.data())
       ),
-      lastDocument:
-        documents.length > 0
-          ? documents[documents.length - 1]
-          : null,
+      lastDocument: finalDocument,
       hasMore,
     };
   } catch {
