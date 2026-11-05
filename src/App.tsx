@@ -1,5 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { User } from "firebase/auth";
+import type {
+  DocumentData,
+  QueryDocumentSnapshot,
+} from "firebase/firestore";
 
 import {
   login,
@@ -18,7 +22,31 @@ import {
   type ProfileVisibility,
 } from "./services/user.service";
 
+import {
+  createPost,
+  getPublicFeed,
+  type COLPost,
+  type COLPostCategory,
+} from "./services/post.service";
+
 type AuthMode = "login" | "signup" | "reset";
+type DashboardTab = "home" | "create" | "profile";
+
+const categories: {
+  value: COLPostCategory;
+  label: string;
+  emoji: string;
+}[] = [
+  { value: "birthday", label: "Birthday", emoji: "🎂" },
+  { value: "wedding", label: "Wedding", emoji: "💍" },
+  { value: "achievement", label: "Achievement", emoji: "🏆" },
+  { value: "family", label: "Family", emoji: "👨‍👩‍👧‍👦" },
+  { value: "friendship", label: "Friendship", emoji: "🤝" },
+  { value: "travel", label: "Travel", emoji: "✈️" },
+  { value: "festival", label: "Festival", emoji: "🎉" },
+  { value: "graduation", label: "Graduation", emoji: "🎓" },
+  { value: "other", label: "Other", emoji: "✨" },
+];
 
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -27,6 +55,7 @@ function App() {
 
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [feedLoading, setFeedLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -39,12 +68,26 @@ function App() {
   const [visibility, setVisibility] =
     useState<ProfileVisibility>("public");
 
+  const [tab, setTab] = useState<DashboardTab>("home");
+  const [postText, setPostText] = useState("");
+  const [postCategory, setPostCategory] =
+    useState<COLPostCategory>("other");
+
+  const [posts, setPosts] = useState<COLPost[]>([]);
+  const [lastDocument, setLastDocument] =
+    useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+
   useEffect(() => {
     const unsubscribe = observeAuthState((currentUser) => {
       setUser(currentUser);
       setProfile(null);
+      setPosts([]);
+      setLastDocument(null);
+      setHasMore(false);
       setProfileLoading(true);
       setError("");
+      setSuccess("");
     });
 
     return unsubscribe;
@@ -97,6 +140,43 @@ function App() {
       active = false;
     };
   }, [user]);
+
+  async function loadFeed(reset = false) {
+    if (feedLoading) return;
+
+    setFeedLoading(true);
+    setError("");
+
+    try {
+      const page = await getPublicFeed(
+        reset ? null : lastDocument,
+        10
+      );
+
+      setPosts((previous) =>
+        reset ? page.posts : [...previous, ...page.posts]
+      );
+
+      setLastDocument(page.lastDocument);
+      setHasMore(page.hasMore);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load the celebration feed."
+      );
+    } finally {
+      setFeedLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (user && profile?.profileSetupCompleted) {
+      void loadFeed(true);
+    }
+    // Load the first page when the authenticated profile becomes ready.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, profile?.profileSetupCompleted]);
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -151,7 +231,6 @@ function App() {
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
-
     if (!user) return;
 
     setLoading(true);
@@ -186,6 +265,38 @@ function App() {
     }
   }
 
+  async function handleCreatePost(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!user || !profile) return;
+
+    setLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      await createPost({
+        text: postText.trim(),
+        category: postCategory,
+      });
+
+      setPostText("");
+      setPostCategory("other");
+      setTab("home");
+
+      await loadFeed(true);
+      setSuccess("Your celebration was published!");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to publish your celebration."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleLogout() {
     setLoading(true);
     setError("");
@@ -193,6 +304,7 @@ function App() {
     try {
       await logout();
       setProfile(null);
+      setPosts([]);
       setSuccess("You have signed out.");
     } catch (err) {
       setError(
@@ -214,6 +326,49 @@ function App() {
           <small>Celebration of Life</small>
         </span>
       </a>
+    );
+  }
+
+  function Navigation() {
+    const items: {
+      id: DashboardTab;
+      label: string;
+      emoji: string;
+    }[] = [
+      { id: "home", label: "Home", emoji: "🏠" },
+      { id: "create", label: "Celebrate", emoji: "✨" },
+      { id: "profile", label: "Profile", emoji: "👤" },
+    ];
+
+    return (
+      <nav
+        aria-label="Main navigation"
+        style={{
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          margin: "20px 0",
+        }}
+      >
+        {items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={
+              tab === item.id
+                ? "col-button primary"
+                : "col-button secondary"
+            }
+            onClick={() => {
+              setTab(item.id);
+              setError("");
+              setSuccess("");
+            }}
+          >
+            {item.emoji} {item.label}
+          </button>
+        ))}
+      </nav>
     );
   }
 
@@ -350,44 +505,230 @@ function App() {
         <section className="col-welcome" id="home">
           <div className="col-sparkle">✦</div>
           <p className="col-eyebrow">YOUR WORLD OF HAPPY MOMENTS</p>
-
           <h1>
             Welcome to
             <br />
             COL, <span>{profile.displayName}.</span>
           </h1>
-
           <p className="col-description">
-            Your profile is ready. This is the beginning of
-            your Celebration of Life journey.
+            Every moment deserves a place to shine.
           </p>
+        </section>
 
-          <section className="col-auth-card">
-            <h2>Your profile</h2>
-            <p><strong>Name:</strong> {profile.displayName}</p>
-            <p><strong>Email:</strong> {profile.email}</p>
-            <p><strong>About:</strong> {profile.bio || "Not added yet"}</p>
-            <p><strong>Location:</strong> {profile.location || "Not added"}</p>
-            <p>
-              <strong>Visibility:</strong> {profile.visibility}
-            </p>
-          </section>
+        <section className="col-auth-card">
+          <Navigation />
 
-          <section className="col-auth-card">
-            <p className="col-eyebrow">COMING NEXT</p>
-            <h2>Your celebration feed</h2>
-            <p>
-              The next development step is connecting your
-              dashboard to posts, photos, videos and celebrations.
+          {error && (
+            <p className="col-message error" role="alert">
+              {error}
             </p>
-          </section>
+          )}
 
           {success && (
             <p className="col-message success" role="status">
               {success}
             </p>
           )}
+
+          {tab === "home" && (
+            <>
+              <div className="col-card-heading">
+                <p className="col-eyebrow">COL COMMUNITY</p>
+                <h2>Celebration Feed</h2>
+                <p>Discover and celebrate life's happy moments.</p>
+              </div>
+
+              <button
+                type="button"
+                className="col-button primary"
+                onClick={() => setTab("create")}
+              >
+                ✨ Share a celebration
+              </button>
+
+              <div style={{ marginTop: 24 }}>
+                {posts.length === 0 && !feedLoading && (
+                  <p>
+                    No public celebrations are available yet.
+                    Be among the first to share a happy moment!
+                  </p>
+                )}
+
+                {posts.map((post) => {
+                  const category = categories.find(
+                    (item) => item.value === post.category
+                  );
+
+                  return (
+                    <article
+                      key={post.id}
+                      className="col-auth-card"
+                      style={{ margin: "18px 0", padding: 20 }}
+                    >
+                      <p className="col-eyebrow">
+                        {category?.emoji ?? "✨"}{" "}
+                        {category?.label ?? "Celebration"}
+                      </p>
+
+                      <h3>{post.authorName}</h3>
+
+                      <p style={{ whiteSpace: "pre-wrap" }}>
+                        {post.text}
+                      </p>
+
+                      {post.media.map((media, index) => (
+                        media.type === "image" ? (
+                          <img
+                            key={`${post.id}-${index}`}
+                            src={media.url}
+                            alt="Celebration"
+                            loading="lazy"
+                            style={{
+                              width: "100%",
+                              borderRadius: 14,
+                              marginTop: 12,
+                            }}
+                          />
+                        ) : (
+                          <video
+                            key={`${post.id}-${index}`}
+                            src={media.url}
+                            controls
+                            preload="metadata"
+                            style={{
+                              width: "100%",
+                              borderRadius: 14,
+                              marginTop: 12,
+                            }}
+                          />
+                        )
+                      ))}
+
+                      <p className="col-status">
+                        ❤️ {post.likeCount} · 💬 {post.commentCount}
+                      </p>
+                    </article>
+                  );
+                })}
+
+                {feedLoading && <p>Loading celebrations...</p>}
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="col-button secondary"
+                    onClick={() => void loadFeed(true)}
+                    disabled={feedLoading}
+                  >
+                    Refresh feed
+                  </button>
+
+                  {hasMore && (
+                    <button
+                      type="button"
+                      className="col-button secondary"
+                      onClick={() => void loadFeed(false)}
+                      disabled={feedLoading}
+                    >
+                      Load more
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {tab === "create" && (
+            <>
+              <div className="col-card-heading">
+                <p className="col-eyebrow">SHARE YOUR HAPPINESS</p>
+                <h2>Create a celebration</h2>
+                <p>Tell the COL community about your happy moment.</p>
+              </div>
+
+              <form onSubmit={handleCreatePost}>
+                <label className="col-field">
+                  Celebration category
+                  <select
+                    value={postCategory}
+                    onChange={(event) =>
+                      setPostCategory(
+                        event.target.value as COLPostCategory
+                      )
+                    }
+                  >
+                    {categories.map((category) => (
+                      <option
+                        key={category.value}
+                        value={category.value}
+                      >
+                        {category.emoji} {category.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="col-field">
+                  Your story
+                  <textarea
+                    value={postText}
+                    onChange={(event) => setPostText(event.target.value)}
+                    placeholder="What beautiful moment would you like to celebrate?"
+                    maxLength={3000}
+                    rows={6}
+                  />
+                </label>
+
+                <p className="col-status">
+                  {postText.length}/3000 characters
+                </p>
+
+                <button
+                  type="submit"
+                  className="col-button primary full"
+                  disabled={loading || !postText.trim()}
+                >
+                  {loading ? "Publishing..." : "Publish celebration"}
+                </button>
+              </form>
+
+              <p className="col-status">
+                Text-only publishing is enabled in this step.
+                Photo and video uploads will be connected separately.
+              </p>
+            </>
+          )}
+
+          {tab === "profile" && (
+            <>
+              <div className="col-card-heading">
+                <p className="col-eyebrow">YOUR COL ACCOUNT</p>
+                <h2>Your profile</h2>
+              </div>
+
+              <p><strong>Name:</strong> {profile.displayName}</p>
+              <p><strong>Email:</strong> {profile.email}</p>
+              <p><strong>About:</strong> {profile.bio || "Not added yet"}</p>
+              <p><strong>Location:</strong> {profile.location || "Not added"}</p>
+              <p><strong>Visibility:</strong> {profile.visibility}</p>
+              <p><strong>Account:</strong> Active</p>
+
+              <button
+                type="button"
+                className="col-button secondary"
+                onClick={handleLogout}
+                disabled={loading}
+              >
+                Sign out
+              </button>
+            </>
+          )}
         </section>
+
+        <footer className="col-footer">
+          <strong>COL – Celebration of Life</strong>
+          <span>Every Moment. Every Memory. Every Life.</span>
+        </footer>
       </main>
     );
   }
