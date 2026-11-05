@@ -1,0 +1,23 @@
+{
+  "name": "col-cloud-functions",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Secure backend services for COL Celebration of Life",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "deploy": "firebase deploy --only functions",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cloudinary": "^2.5.1",
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.2"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
